@@ -1,8 +1,10 @@
 {
+ "yearly_pasture_growth": 14000.0,
  "initial_pasture_cover": 2500.0,
+ "maximum_soil_moisture": 150.0,
  "maximum_growth_rate": 60.0,
  "energy_for_maintenance": 378.0,
- "stocking_rate": 3.0,
+ "stocking_rate": 3.25,
  "max_milk_energy": [
   888.195937634907,
   1049.1514487251575,
@@ -167,7 +169,7 @@
   64.49547321964306
  ],
  "initial_storage": 0.0,
- "niwa_data": "POWDER_NIWA_data.tsv",
+ "niwa_data": "TGA.daily.df.csv",
  "maximum_pasture_cover": 3500.0,
  "number_of_weeks": 52,
  "initial_soil_moisture": 150.0,
@@ -228,7 +230,6 @@
  ],
  "supplement_energy_density": 11.0,
  "number_of_pasture_cuts": 20,
- "index_of_soil_fertility": 12.0,
  "energy_for_pregnancy": [
   0.0,
   0.0,

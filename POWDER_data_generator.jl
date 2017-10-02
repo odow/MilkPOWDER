@@ -165,7 +165,7 @@ model = Dict{String, Any}(
     "initial_pasture_cover"   => 2500.0, # kgDM/Ha
     "initial_storage"         => 0.0,    # kgDM
     "initial_soil_moisture"   => 150.0,  # mm
-
+    "maximum_soil_moisture"   => 150.0, # mm
     "maximum_pasture_cover"   => 3500.0, # kgDM/Ha
     "maximum_growth_rate"     => 60.0,   # kgDM/Ha/day
     "number_of_pasture_cuts"  => 20,     # Int
@@ -173,7 +173,7 @@ model = Dict{String, Any}(
     "supplement_energy_density" => 11.0,   # MJ/kg
     "harvesting_efficiency"   => 0.9,    # Float64 ∈ [0, 1]
 
-    "index_of_soil_fertility" => 12.0,   # kgDM/Ha/mm
+    "yearly_pasture_growth" => 14_000.0,   # kgDM/Ha/mm
 
     "energy_for_maintenance"  => 54.0 * 7,   # MJ/Cow/week
     "energy_for_pregnancy"  => [         # MJ/Cow/week
@@ -191,7 +191,7 @@ model = Dict{String, Any}(
     "energy_for_bcs_dry"  => [         # MJ/cow/week
         bcsenergy(t, false) for t in 1:52
     ],
-    "niwa_data" => "POWDER_NIWA_data.tsv"
+    "niwa_data" => "TGA.daily.df.csv"
 )
 
 open("model.parameters.json", "w") do io
