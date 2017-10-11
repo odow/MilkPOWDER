@@ -191,7 +191,8 @@ model = Dict{String, Any}(
     "energy_for_bcs_dry"  => [         # MJ/cow/week
         bcsenergy(t, false) for t in 1:52
     ],
-    "niwa_data" => "TGA.daily.df.csv"
+    "niwa_data" => "TGA.daily.df.csv",
+    "futures_transaction_cost"   => 0.02,    # $/kgMS
 )
 
 open("model.parameters.json", "w") do io

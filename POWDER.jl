@@ -136,7 +136,7 @@ m = SDDPModel(
 
 end
 
-solve(m, max_iterations=100)
+solve(m, max_iterations=100, cut_output_file="powder.cuts", log_file="powder.log", print_level=2)
 
 NSIM = 200
 results = simulate(m, NSIM, [:P, :Q, :C, :W, :fₛ, :fₚ, :gr, :mlk, :ev, :b, :i, :h])
