@@ -1,0 +1,8 @@
+experiments/*
+*/*.cuts
+*/*.model
+*/*.results
+*/*.data
+*/*.log
+~*.xlsx
+*/*.html
