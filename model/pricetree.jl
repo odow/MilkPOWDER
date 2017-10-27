@@ -47,13 +47,13 @@ function pricetreemodel(parameters)
 
         @constraint(sp, cx == milkvalue -
             # cost of supplement ($/kgDM). Incl %DM from wet, storage loss, wastage
-            0.4 * b -
+            parameters["supplement_price"] * b -
             0.5 * i - # cost of irrigation ($/mm)
             0.1 * h   # cost of harvest    ($/kgDM)
         )
         @stageobjective(sp,
             cx -
-            0.4 * Δ[1] - # penalty from excess feeding due to FEI limits
+            parameters["supplement_price"] * Δ[1] - # penalty from excess feeding due to FEI limits
             # 1e4 * Δ[3] - # encourage evapotranspiration to max
             1e4 * Δ[2] + # penalise low pasture cover
             0.0001*W # encourage soil moisture to max
@@ -90,17 +90,20 @@ function runpricetreemodel(parameterfile)
             |           profit per cow |       |       |       |       |       |
             ====================================================================
     =#
-    data = Array{Any}(11, 7)
+    data = Array{Any}(14, 7)
     data[:, 1] = [
         "Lactation Length (Weeks) ",
-        "Feed Consumed (kg)",
-        "grown on-farm",
-        "grown off-farm",
-        "Supplementation Intensity",
         "Milk Production (kgMS)",
         "per Hectare",
         "per Cow",
-        "Operating Profit (\\\$)",
+        "\\\\textbf{Milk Revenue (\$/Ha)}"
+        "Feed Consumed (t/Ha)",
+        "grown on-farm",
+        "grown off-farm",
+        "\\% Feed Imported",
+        "Supplement Expense (\$/Ha)",
+        "Fixed Expense (\$/Ha)",
+        "Operating Profit (\\\$/Ha)",
         "per Hectare",
         "per Cow"
     ]
@@ -108,38 +111,48 @@ function runpricetreemodel(parameterfile)
     data[:, 7] = [
         38.6,
         "",
-        13000,
-        3000,
-        0.188,
+        1193,
+        398,
+        7158,
         "",
-        991,
-        351,
+        12.15,
+        2.85,
+        19,
+        1425,
+        3536,
         "",
-        1656,
-        571
+        2197,
+        732
     ]
 
     data[1,2:6] = quantile([sum(sim[:C]) / parameters["stocking_rate"] for sim in results], [0.0, 0.25, 0.5, 0.75, 1.0])
     data[2,2:end] = ""
+
+
+    kgms_ha = [sum(sim[:ms]) for sim in results]
+    data[3,2:6] = quantile(kgms_ha, [0.0, 0.25, 0.5, 0.75, 1.0])
+    data[4,2:6] = quantile(kgms_ha / parameters["stocking_rate"], [0.0, 0.25, 0.5, 0.75, 1.0])
+    data[5,2:6] = data[3,2:6] .* [4,5,6,7,8,6]
+    data[6,2:end] = ""
+
     herbage = [sum(sim[:fₚ]) for sim in results]
     supplement = [sum(sim[:fₛ]) for sim in results]
-    data[3,2:6] = quantile(herbage, [0.0, 0.25, 0.5, 0.75, 1.0])
-    data[4,2:6] = quantile(supplement, [0.0, 0.25, 0.5, 0.75, 1.0])
-    data[5,2:6] = quantile(supplement ./ (supplement + herbage), [0.0, 0.25, 0.5, 0.75, 1.0])
-    data[6,2:end] = ""
-    kgms_ha = [sum(sim[:ms]) for sim in results]
-    data[7,2:6] = quantile(kgms_ha, [0.0, 0.25, 0.5, 0.75, 1.0])
-    data[8,2:6] = quantile(kgms_ha / parameters["stocking_rate"], [0.0, 0.25, 0.5, 0.75, 1.0])
-    data[9,2:end] = ""
-    dairy_operating_expenses = 4385.0
+    data[7,2:6] = quantile(herbage, [0.0, 0.25, 0.5, 0.75, 1.0]) / 1000
+    data[8,2:6] = quantile(supplement, [0.0, 0.25, 0.5, 0.75, 1.0]) / 1000
+    data[9,2:6] = 100*quantile(supplement ./ (supplement + herbage), [0.0, 0.25, 0.5, 0.75, 1.0])
+    data[10,2:6] = data[8,2:6] * 500
+    data[11,2:end] = 3536
+    data[12,2:end] = ""
+
+    dairy_operating_expenses = 3536.0
     profit_ha = [sum(sim[:cx]) for sim in results] - dairy_operating_expenses
-    data[10,2:6] = quantile(profit_ha, [0.0, 0.25, 0.5, 0.75, 1.0])
-    data[11,2:6] = quantile(profit_ha / parameters["stocking_rate"], [0.0, 0.25, 0.5, 0.75, 1.0])
+    data[13,2:6] = quantile(profit_ha, [0.0, 0.25, 0.5, 0.75, 1.0])
+    data[14,2:6] = quantile(profit_ha / parameters["stocking_rate"], [0.0, 0.25, 0.5, 0.75, 1.0])
 
     open("$(name).data", "w") do io
         writedlm(io, data)
     end
-    roundings = [1, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0]
+    roundings = [1, 0, 0, 0, 0, 0, 2, 2, 1, 0, 0, 0, 0, 0, 0]
     open("$(name).data.tex", "w") do io
         for i in 1:size(data, 1)
             print(io, data[i, 1])

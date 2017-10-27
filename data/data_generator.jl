@@ -66,7 +66,7 @@ MEperkgMS(week::Int) = weekavg(MEperkgMSbyday, week)
 # ==============================================================================
 #   model for Pregnancy
 function pregnancybyday(day::Int)
-    days_since_conception = day - (365 - 276)
+    days_since_conception = day - (365 - 284)
     if days_since_conception > 0
         return 0.2278*exp(0.01989 * days_since_conception)
     else
@@ -80,8 +80,8 @@ sum(pregnancybyday(i) for i in 1:365)
 #   Friggens model for bcs
 const cow_initialliveweight = 450.0
 const cow_initialbcs        = 3.2
-const cow_conceptiondate    = 365 - 274
-const cow_gestationlength   = 274
+const cow_conceptiondate    = 365 - 284
+const cow_gestationlength   = 284
 function changeliveweightbyday(day::Int)
     # Daily change in lipid mass (kg)
     max_lipid_loss = -1.75
@@ -161,12 +161,13 @@ end
 
 model = Dict{String, Any}(
     "model_name"              => "Powder",
+    "supplement_price"        => 0.5,
     "first_week"              => 31, # 1 August
     "number_cuts"             => 5000,
     "number_simulations"      => 1000,
     "FEI_multiplier"          => 1.0,
     "number_of_weeks"         => 52,     # Weeks
-    "stocking_rate"           => 3.25,   # Cows/Ha
+    "stocking_rate"           => 3.0,   # Cows/Ha
     "initial_pasture_cover"   => 2500.0, # kgDM/Ha
     "initial_storage"         => 0.0,    # kgDM
     "initial_soil_moisture"   => 150.0,  # mm

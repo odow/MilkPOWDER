@@ -24,7 +24,7 @@ function basePOWDERmodel!(sp, stage, parameters)
     ηₛ = parameters["supplement_energy_density"] # net energy content of supplement (MJ/kgDM)
 
     # index of soil fertility estimated from average seasonal pasture growth
-    κ = 7 * parameters["yearly_pasture_growth"] / 365 / mean(NIWA[2:end, 4])
+    κ = 13.7#7 * parameters["yearly_pasture_growth"] / 365 / mean(NIWA[2:end, 4])
 
     # pasture growth as a function of pasture cover
     g(p, gmax=gₘ, pmax=Pₘ) = 4 * gmax / pmax * p * (1 - p / pmax)
@@ -78,7 +78,7 @@ function basePOWDERmodel!(sp, stage, parameters)
         Q == Q₀ + β*h + b - fₛ
         C == C₀ - u
         W <= parameters["maximum_soil_moisture"]
-        M == M₀ + mlk / parameters["energy_content_of_milk"][stage] - ms + mb
+        M == M₀ + 0.9 * mlk / parameters["energy_content_of_milk"][stage] - ms + mb
 
         # energy balance
         ηₚ * fₚ + ηₛ * fₛ >= energy_req + mlk
@@ -121,9 +121,9 @@ function basePOWDERmodel!(sp, stage, parameters)
     # a maximum rate of supplementation - for example due to FEI limits
     @constraints(sp, begin
         Δ[1] >= 0
-        Δ[1] >= 0 + 1 * parameters["FEI_multiplier"] * (fₛ - 2 * (parameters["stocking_rate"] * 7))
-        Δ[1] >= 1 + 4 * parameters["FEI_multiplier"] * (fₛ - 4 * (parameters["stocking_rate"] * 7))
-        Δ[1] >= 3 + 8 * parameters["FEI_multiplier"] * (fₛ - 6 * (parameters["stocking_rate"] * 7))
+        Δ[1] >= 0 + 0.5 * parameters["FEI_multiplier"] * (fₛ - 2 * (parameters["stocking_rate"] * 7))
+        Δ[1] >= 1 + 1.0 * parameters["FEI_multiplier"] * (fₛ - 4 * (parameters["stocking_rate"] * 7))
+        # Δ[1] >= 3 + 8 * parameters["FEI_multiplier"] * (fₛ - 6 * (parameters["stocking_rate"] * 7))
     end)
 
     if stage == 52
