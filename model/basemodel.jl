@@ -24,7 +24,7 @@ function basePOWDERmodel!(sp, stage, parameters)
     ηₛ = parameters["supplement_energy_density"] # net energy content of supplement (MJ/kgDM)
 
     # index of soil fertility estimated from average seasonal pasture growth
-    κ = 13.7#7 * parameters["yearly_pasture_growth"] / 365 / mean(NIWA[2:end, 4])
+    κ = parameters["soil_fertility"]
 
     # pasture growth as a function of pasture cover
     g(p, gmax=gₘ, pmax=Pₘ) = 4 * gmax / pmax * p * (1 - p / pmax)
@@ -36,6 +36,7 @@ function basePOWDERmodel!(sp, stage, parameters)
         P >= 0, P₀ == parameters["initial_pasture_cover"] # pasture cover (kgDM/Ha)
         Q >= 0, Q₀ == parameters["initial_storage"]       # supplement storage (kgDM)
         W >= 0, W₀ == parameters["initial_soil_moisture"] # soil moisture (mm)
+        # C₀ are the cows milking during the stage
         C >= 0, C₀ == parameters["stocking_rate"]         # number of cows milking
         # need to bound this initially until we get some cuts
         -1e4 <= M <= 1e4,      M₀ == 0.0                  # quantity of unsold milk
@@ -50,12 +51,12 @@ function basePOWDERmodel!(sp, stage, parameters)
         u   >= 0 # dry off cows (Cows)
         ev  >= 0 # evapotranspiration rate
         gr  >= 0 # potential growth
-        mlk >= 0 # milk production
+        mlk >= 0 # milk production (MJ)
         ms  >= 0 # milk sales
         mb  >= 0 # milk buys
 
         cx # the stage objective  excl. penalties
-
+        milk # kgMS
         #=
             Penalties
         =#
@@ -78,17 +79,19 @@ function basePOWDERmodel!(sp, stage, parameters)
         Q == Q₀ + β*h + b - fₛ
         C == C₀ - u
         W <= parameters["maximum_soil_moisture"]
-        M == M₀ + 0.9 * mlk / parameters["energy_content_of_milk"][stage] - ms + mb
 
+        milk <= mlk / (1.1 * parameters["energy_content_of_milk"][stage])
+
+        M == M₀ + milk - ms + mb
         # energy balance
-        ηₚ * fₚ + ηₛ * fₛ >= energy_req + mlk
+        ηₚ * fₚ + ηₛ * fₛ >= 1.1 * energy_req + mlk
 
         # maximum milk
         mlk <= parameters["max_milk_energy"][stage] * C₀
-        mlk >= parameters["max_milk_energy"][stage] * C * 0.5
+        mlk >= parameters["max_milk_energy"][stage] * C₀ * 0.5
 
         # pasture growth constraints
-        gr <= κ * ev / 7
+        gr <= κ[stage] * ev / 7
         [pbar=linspace(0,Pₘ, Pₙ)], gr <= g(pbar) + dgdt(pbar) * ( P₀ - pbar + 1e-2)
     end)
 
@@ -118,12 +121,17 @@ function basePOWDERmodel!(sp, stage, parameters)
 
     @constraint(sp, i <= 0)
 
+    if stage >= 44
+        # dry off by end of week 44 (end of may)
+        @constraint(sp, C == 0)
+    end
+
     # a maximum rate of supplementation - for example due to FEI limits
     @constraints(sp, begin
         Δ[1] >= 0
-        Δ[1] >= 0 + 0.5 * parameters["FEI_multiplier"] * (fₛ - 2 * (parameters["stocking_rate"] * 7))
-        Δ[1] >= 1 + 1.0 * parameters["FEI_multiplier"] * (fₛ - 4 * (parameters["stocking_rate"] * 7))
-        # Δ[1] >= 3 + 8 * parameters["FEI_multiplier"] * (fₛ - 6 * (parameters["stocking_rate"] * 7))
+        Δ[1] >= 0 + 1 * parameters["FEI_multiplier"] * (fₛ - 3 * (parameters["stocking_rate"] * 7))
+        Δ[1] >= 2 + 2 * parameters["FEI_multiplier"] * (fₛ - 4 * (parameters["stocking_rate"] * 7))
+        # Δ[1] >= 4 + 2 * parameters["FEI_multiplier"] * (fₛ - 6 * (parameters["stocking_rate"] * 7))
     end)
 
     if stage == 52
@@ -136,7 +144,7 @@ function basePOWDERmodel!(sp, stage, parameters)
 end
 
 function simulatemodel(fileprefix, m, NSIM, prices, Ω)
-    results = simulate(m, NSIM, [:P, :Q, :C, :W, :M, :fₛ, :fₚ, :gr, :mlk, :ev, :b, :i, :h, :ms, :mb, :cx])
+    results = simulate(m, NSIM, [:P, :Q, :C, :C₀, :W, :M, :fₛ, :fₚ, :gr, :mlk, :ev, :b, :i, :h, :ms, :mb, :cx, :milk])
     p = SDDP.newplot()
     SDDP.addplot!(p, 1:NSIM, 1:52, (i,t)->results[i][:stageobjective][t], title="Objective", cumulative=true)
     SDDP.addplot!(p, 1:NSIM, 1:52, (i,t)->results[i][:cx][t], title="Objective", cumulative=true)
@@ -145,6 +153,7 @@ function simulatemodel(fileprefix, m, NSIM, prices, Ω)
     SDDP.addplot!(p, 1:NSIM, 1:52, (i,t)->results[i][:W][t], title="Soil Moisture")
     SDDP.addplot!(p, 1:NSIM, 1:52, (i,t)->results[i][:C][t], title="Cows Milking")
     SDDP.addplot!(p, 1:NSIM, 1:52, (i,t)->results[i][:M][t], title="Unsold Milk")
+    SDDP.addplot!(p, 1:NSIM, 1:52, (i,t)->results[i][:milk][t] / 7 / 3, title="Milk Production / Cow")
     SDDP.addplot!(p, 1:NSIM, 1:52, (i,t)->results[i][:gr][t], title="Growth")
     SDDP.addplot!(p, 1:NSIM, 1:52, (i,t)->results[i][:ev][t], title="Actual Evapotranspiration")
     SDDP.addplot!(p, 1:NSIM, 1:52, (i,t)->Ω[t][results[i][:noise][t]].e, title="Potential Evapotranspiration")

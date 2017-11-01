@@ -163,9 +163,14 @@ model = Dict{String, Any}(
     "model_name"              => "Powder",
     "supplement_price"        => 0.5,
     "first_week"              => 31, # 1 August
-    "number_cuts"             => 5000,
+    "number_cuts"             => 500,
     "number_simulations"      => 1000,
     "FEI_multiplier"          => 1.0,
+    "soil_fertility"          => [37.96,30.7,26.41,25.59,23.09,24.16,22.4,22.25,
+        22.91,21.75,24.06,19.43,17.33,15.4,14.39,12.91,11.95,10.56,10.61,9.23,
+        8.31,8.41,8.13,8.33,8.39,8.89,9.12,10.07,11.41,10.5,11.25,11.81,11.82,
+        13.04,13.69,16.33,18.04,20.82,24.43,25.99,30.62,37.74,43.8,50.72,56.51,
+        62.4,68.65,74.15,65.48,57.67,52.93,40.59],
     "number_of_weeks"         => 52,     # Weeks
     "stocking_rate"           => 3.0,   # Cows/Ha
     "initial_pasture_cover"   => 2500.0, # kgDM/Ha
@@ -173,7 +178,7 @@ model = Dict{String, Any}(
     "initial_soil_moisture"   => 150.0,  # mm
     "maximum_soil_moisture"   => 150.0, # mm
     "maximum_pasture_cover"   => 3500.0, # kgDM/Ha
-    "maximum_growth_rate"     => 60.0,   # kgDM/Ha/day
+    "maximum_growth_rate"     => 65.0,   # kgDM/Ha/day
     "number_of_pasture_cuts"  => 20,     # Int
     "pasture_energy_density"  => 11.0,   # MJ/kg
     "supplement_energy_density" => 11.0,   # MJ/kg

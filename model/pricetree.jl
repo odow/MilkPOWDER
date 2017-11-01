@@ -49,7 +49,7 @@ function pricetreemodel(parameters)
             # cost of supplement ($/kgDM). Incl %DM from wet, storage loss, wastage
             parameters["supplement_price"] * b -
             0.5 * i - # cost of irrigation ($/mm)
-            0.1 * h   # cost of harvest    ($/kgDM)
+            0.275 * h   # cost of harvest    ($/kgDM)
         )
         @stageobjective(sp,
             cx -
@@ -96,13 +96,13 @@ function runpricetreemodel(parameterfile)
         "Milk Production (kgMS)",
         "per Hectare",
         "per Cow",
-        "\\\\textbf{Milk Revenue (\$/Ha)}"
+        "\\textbf{Milk Revenue (\\\$/Ha)}",
         "Feed Consumed (t/Ha)",
         "grown on-farm",
         "grown off-farm",
         "\\% Feed Imported",
-        "Supplement Expense (\$/Ha)",
-        "Fixed Expense (\$/Ha)",
+        "Supplement Expense (\\\$/Ha)",
+        "Fixed Expense (\\\$/Ha)",
         "Operating Profit (\\\$/Ha)",
         "per Hectare",
         "per Cow"
@@ -125,14 +125,14 @@ function runpricetreemodel(parameterfile)
         732
     ]
 
-    data[1,2:6] = quantile([sum(sim[:C]) / parameters["stocking_rate"] for sim in results], [0.0, 0.25, 0.5, 0.75, 1.0])
+    data[1,2:6] = quantile([sum(sim[:C₀]) / parameters["stocking_rate"] for sim in results], [0.0, 0.25, 0.5, 0.75, 1.0])
     data[2,2:end] = ""
 
 
     kgms_ha = [sum(sim[:ms]) for sim in results]
     data[3,2:6] = quantile(kgms_ha, [0.0, 0.25, 0.5, 0.75, 1.0])
     data[4,2:6] = quantile(kgms_ha / parameters["stocking_rate"], [0.0, 0.25, 0.5, 0.75, 1.0])
-    data[5,2:6] = data[3,2:6] .* [4,5,6,7,8,6]
+    data[5,2:6] = data[3,2:6] .* [4,5,6,7,8]
     data[6,2:end] = ""
 
     herbage = [sum(sim[:fₚ]) for sim in results]
