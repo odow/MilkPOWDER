@@ -290,6 +290,7 @@ Run POWDER model and produce some nice pictures and statistics
 function runPOWDER(parameterfile::String)
     # parse the parameters
     parameters = JSON.parsefile(parameterfile)
+    srand(parameters["random_seed"])
     # build the sddp model
     (m, prices) = buildPOWDER(parameters)
     # name to save files
@@ -363,17 +364,13 @@ function runPOWDER(parameterfile::String)
     data[13,:] = simquant([sum(sim[:cx]) for sim in results]) - parameters["fixed_cost"]
     data[14,:] = data[13,:] / parameters["stocking_rate"]
 
-    open("$(name).data", "w") do io
-        writedlm(io, data)
-    end
-
     # print a formatted table for copying into latex
     roundings = [1, 0, 0, 0, 0, 0, 2, 2, 1, 0, 0, 0, 0, 0]
     hlines = [true, false, false, false, true, false, false, false, false, true, true, false, false, false]
     open("$(name).data.tex", "w") do io
         for i in 1:size(data, 1)
-            print(io, data[i, 1])
-            for j in 2:size(data, 2)
+            print(io, headers[i])
+            for j in 1:size(data, 2)
                 print(io, " & ")
                 if data[i,j] != ""
                     if roundings[i] == 0
@@ -383,7 +380,7 @@ function runPOWDER(parameterfile::String)
                     end
                 end
             end
-            println(io, "\\\\")
+            println(io, " & ", benchmark[i], "\\\\")
             if hlines[i]
                 println(io, "\\hline")
             end

@@ -171,6 +171,8 @@ end
 model = Dict{String, Any}(
     "model_name"              => "Powder",
 
+    "random_seed" => 1234, # for repeatability
+
     # Weather data
     "niwa_data" => "TGA.daily.df.csv",
 
