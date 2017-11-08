@@ -87,6 +87,7 @@ function buildPOWDER(parameters::Dict)
             stages = parameters["number_of_weeks"],
             # Change this to choose a different solver
             solver = GurobiSolver(OutputFlag=0),
+            cut_oracle = LevelOneCutOracle(),
             objective_bound = parameters["objective_bound"],
             markov_transition = transition
                 ) do sp, stage, price
@@ -128,7 +129,6 @@ function buildPOWDER(parameters::Dict)
             i   >= 0 # irrigate farm (mm/Ha)
             fₛ  >= 0 # feed herd supplement (kgDM)
             fₚ  >= 0 # feed herd pasture (kgDM)
-            u   >= 0 # dry off cows (Cows)
             ev  >= 0 # evapotranspiration rate
             gr  >= 0 # potential growth
             mlk >= 0 # milk production (MJ)
@@ -141,7 +141,7 @@ function buildPOWDER(parameters::Dict)
             #=
                 Penalties
             =#
-            Δ[i=1:3] >= 0
+            Δ[i=1:2] >= 0
         end)
 
         # Build an expression for the energy required to save space later
@@ -158,8 +158,8 @@ function buildPOWDER(parameters::Dict)
         @constraints(sp, begin
             # State transitions
             P <= P₀ + 7*gr - h - fₚ
-            Q == Q₀ + β*h + b - fₛ
-            C == C₀ - u
+            Q <= Q₀ + β*h + b - fₛ
+            C <= C₀ # implicitly C == C₀ - u | u ≥ 0
             W <= parameters["maximum_soil_moisture"]
 
             milk <= mlk / (parameters["energy_correction_factor"] * parameters["energy_content_of_milk"][stage])
@@ -199,14 +199,11 @@ function buildPOWDER(parameters::Dict)
 
             # less than accounts for drainage
             W <= W₀ - ev + ω.r + i
-
-            Δ[3] == ω.e - ev
-
         end)
 
         if stage >= parameters["maximum_lactation"]
             # dry off by end of week 44 (end of may)
-            @constraint(sp, C == 0)
+            @constraint(sp, C <= 0)
         end
 
         # a maximum rate of supplementation - for example due to FEI limits
@@ -217,7 +214,7 @@ function buildPOWDER(parameters::Dict)
         end)
 
         if stage == 52
-            @constraint(sp, cx == M * prices[stage][price] -
+            @constraint(sp, cx <= M * prices[stage][price] -
                 # cost of supplement ($/kgDM). Incl %DM from wet, storage loss, wastage
                 parameters["supplement_price"] * b -
                 parameters["cost_irrigation"] * i -   # cost of irrigation ($/mm)
@@ -228,7 +225,7 @@ function buildPOWDER(parameters::Dict)
                 P + Δ[2] >= parameters["final_pasture_cover"]
             end)
         else
-            @constraint(sp, cx ==
+            @constraint(sp, cx <=
                 # cost of supplement ($/kgDM). Incl %DM from wet, storage loss, wastage
                 -parameters["supplement_price"] * b -
                 parameters["cost_irrigation"] * i -   # cost of irrigation ($/mm)
@@ -239,7 +236,6 @@ function buildPOWDER(parameters::Dict)
         @stageobjective(sp,
             cx -
             parameters["supplement_price"] * Δ[1] - # penalty from excess feeding due to FEI limits
-            # 1e4 * Δ[3] - # encourage evapotranspiration to max
             1e4 * Δ[2] + # penalise low pasture cover
             0.0001*W # encourage soil moisture to max
         )
@@ -303,6 +299,7 @@ function runPOWDER(parameterfile::String)
         max_iterations=parameters["number_cuts"],
         cut_output_file="$(name).cuts",
         log_file="$(name).log",
+        cut_selection_frequency = 50,
         print_level=2
     )
 
