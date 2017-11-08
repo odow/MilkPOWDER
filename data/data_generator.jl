@@ -1,3 +1,12 @@
+#  Copyright 2017, Oscar Dowson
+#  This Source Code Form is subject to the terms of the Mozilla Public
+#  License, v. 2.0. If a copy of the MPL was not distributed with this
+#  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+#############################################################################
+
+#=
+    This file can be used to generate a parameter file for the POWDER model.
+=#
 using JSON
 
 function weeksum(f::Function, week::Int)
@@ -74,7 +83,7 @@ function pregnancybyday(day::Int)
     end
 end
 pregnancy(week::Int) = weeksum(pregnancybyday, week)
-sum(pregnancybyday(i) for i in 1:365)
+
 # ==============================================================================
 # ==============================================================================
 #   Friggens model for bcs
@@ -161,49 +170,69 @@ end
 
 model = Dict{String, Any}(
     "model_name"              => "Powder",
-    "supplement_price"        => 0.5,
-    "first_week"              => 31, # 1 August
+
+    # Weather data
+    "niwa_data" => "TGA.daily.df.csv",
+
+    # SDDP Options
+    "objective_bound"         => 1e6,
     "number_cuts"             => 500,
     "number_simulations"      => 1000,
-    "FEI_multiplier"          => 1.0,
+
+    # Time options
+    "first_week"              => 31, # 1 August
+    "number_of_weeks"         => 52,     # Weeks
+    "fixed_cost"              => 3536, # $/year
+    # Supplementation options
+    "supplement_price"        => 0.5,
+    "initial_storage"         => 0.0,    # kgDM
+    "supplement_energy_density" => 11.0,   # MJ/kg
+    "harvesting_efficiency"   => 0.9,    # Float64 ∈ [0, 1]
+    "harvest_cost"            => 0.275,  # $/kg
+
+    # Soil options
     "soil_fertility"          => [37.96,30.7,26.41,25.59,23.09,24.16,22.4,22.25,
         22.91,21.75,24.06,19.43,17.33,15.4,14.39,12.91,11.95,10.56,10.61,9.23,
         8.31,8.41,8.13,8.33,8.39,8.89,9.12,10.07,11.41,10.5,11.25,11.81,11.82,
         13.04,13.69,16.33,18.04,20.82,24.43,25.99,30.62,37.74,43.8,50.72,56.51,
         62.4,68.65,74.15,65.48,57.67,52.93,40.59],
-    "number_of_weeks"         => 52,     # Weeks
-    "stocking_rate"           => 3.0,   # Cows/Ha
-    "initial_pasture_cover"   => 2500.0, # kgDM/Ha
-    "initial_storage"         => 0.0,    # kgDM
     "initial_soil_moisture"   => 150.0,  # mm
     "maximum_soil_moisture"   => 150.0, # mm
+    "cost_irrigation"         => 0.5,   # $/mm
+    "maximum_irrigation"      => 0.0,   # mm/stage
+
+    # grass options
+    "initial_pasture_cover"   => 2500.0, # kgDM/Ha
     "maximum_pasture_cover"   => 3500.0, # kgDM/Ha
     "maximum_growth_rate"     => 65.0,   # kgDM/Ha/day
     "number_of_pasture_cuts"  => 20,     # Int
     "pasture_energy_density"  => 11.0,   # MJ/kg
-    "supplement_energy_density" => 11.0,   # MJ/kg
-    "harvesting_efficiency"   => 0.9,    # Float64 ∈ [0, 1]
-
-    "yearly_pasture_growth" => 14_000.0,   # kgDM/Ha/mm
-
-    "energy_for_maintenance"  => 54.0 * 7,   # MJ/Cow/week
+    "yearly_pasture_growth"   => 14_000.0,   # kgDM/Ha/mm
+    "final_pasture_cover"     => 2500.0, # kg/Ha
+    # animal model options
+    "energy_correction_factor" => 1.1, # correction term to align aniaml model parameters with case study
+    "maximum_milk_production" => 10_000, # bound on total production kgMS/Year
+    "stocking_rate"           => 3.0,    # Cows/Ha
+    "maximum_lactation"       => 44,     # weeks
+    "energy_for_maintenance"  => 54.0 * 7, # MJ/Cow/week
     "energy_for_pregnancy"  => [         # MJ/Cow/week
         pregnancy(t) for t in 1:52
     ],
-    "energy_content_of_milk"  => [         # MJ/kgMS
+    "energy_content_of_milk"  => [       # MJ/kgMS
         MEperkgMS(t) for t in 1:52
     ],
     "max_milk_energy"  => [         # MJ/cow/week
         milkenergy(t) for t in 1:52
+    ],
+    "min_milk_energy"  => [         # MJ/cow/week
+        0.5 * milkenergy(t) for t in 1:52
     ],
     "energy_for_bcs_milking"  => [         # MJ/cow/week
         bcsenergy(t, true) for t in 1:52
     ],
     "energy_for_bcs_dry"  => [         # MJ/cow/week
         bcsenergy(t, false) for t in 1:52
-    ],
-    "niwa_data" => "TGA.daily.df.csv",
-    "futures_transaction_cost"   => 0.02,    # $/kgMS
+    ]
 )
 
 open("model.parameters.json", "w") do io

@@ -1,4 +1,13 @@
-quit()
+#  Copyright 2017, Oscar Dowson
+#  This Source Code Form is subject to the terms of the Mozilla Public
+#  License, v. 2.0. If a copy of the MPL was not distributed with this
+#  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+#############################################################################
+
+#=
+    This file converts the raw text file that is returned from CliFlo into a
+    nicely formatted csv file.
+=#
 using DataFrames
 
 FILE = joinpath(@__DIR__, "TGA.daily.txt")
