@@ -14,7 +14,7 @@
 
         julia POWDER.jl "path/to/parameters.json"
 =#
-using SDDP, JuMP, Gurobi, JSON
+using SDDP, JuMP, Gurobi, CPLEX, JSON
 
 """
     WeatherEvent
@@ -87,6 +87,7 @@ function buildPOWDER(parameters::Dict)
             stages = parameters["number_of_weeks"],
             # Change this to choose a different solver
             solver = GurobiSolver(OutputFlag=0),
+            # solver = CplexSolver(CPX_PARAM_SCRIND=0),
             cut_oracle = LevelOneCutOracle(),
             objective_bound = parameters["objective_bound"],
             markov_transition = transition
@@ -159,7 +160,9 @@ function buildPOWDER(parameters::Dict)
             # State transitions
             P <= P₀ + 7*gr - h - fₚ
             Q <= Q₀ + β*h + b - fₛ
-            C <= C₀ # implicitly C == C₀ - u | u ≥ 0
+            # For a discussion about the 1e-6 term see
+            # see https://github.com/odow/SDDP.jl/issues/6#issuecomment-343022931
+            C <= C₀ #+ 1e-6 # implicitly C == C₀ - u | u ≥ 0
             W <= parameters["maximum_soil_moisture"]
 
             milk <= mlk / (parameters["energy_correction_factor"] * parameters["energy_content_of_milk"][stage])
@@ -236,7 +239,7 @@ function buildPOWDER(parameters::Dict)
         @stageobjective(sp,
             cx -
             parameters["supplement_price"] * Δ[1] - # penalty from excess feeding due to FEI limits
-            1e4 * Δ[2] + # penalise low pasture cover
+            1e3 * Δ[2] + # penalise low pasture cover
             0.0001*W # encourage soil moisture to max
         )
 
