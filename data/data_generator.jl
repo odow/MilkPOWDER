@@ -8,7 +8,7 @@
 #    This file can be used to generate a parameter file for the POWDER model.
 #
 using JSON, DataFrames, Interpolations
-df = readtable("data/TGA.daily.df.csv")
+df = readtable("TGA.daily.df.csv")
 growth = 7*[50,55,45,41,31,19,19,30,47,74,63,50]
 dates  = [Dates.week(Dates.Date(2017,i,15)) for i in 1:12]
 itp = interpolate((dates, ), growth, Gridded(Linear()))
@@ -30,7 +30,7 @@ correction201415 = 11_700 / sum(df201415[:gr])
 correction201314 = 12_600 / sum(df201314[:gr])
 println("Fertility Correction Factor in 2014/15: ", correction201415)
 println("Fertility Correction Factor in 2013/14: ", correction201314)
-corrected_fertility = (correction201314 + correction201415) / 2 * soil_fertility[vcat(31:end, 1:30)]
+corrected_fertility = (correction201314 + correction201415) / 2 * soil_fertility[vcat(31:end, 1:30)] * 1.1
 
 function weeksum(f::Function, week::Int)
     y = 0.0
@@ -90,7 +90,8 @@ function MEperL(t::Int)
 end
 # kgMS produced per MJ of ME set aside for milk production
 function MEperkgMSbyday(day::Int)
-    MEperL(day) / ( (fat_percentage(day) + protein_percentage(day) ) / 100)
+    # 1.2 scales to figure reported by Dairy NZ (~80MJ/kgMS)
+    1.2 * MEperL(day) / ( (fat_percentage(day) + protein_percentage(day) ) / 100)
 end
 MEperkgMS(week::Int) = weekavg(MEperkgMSbyday, week)
 
@@ -191,13 +192,117 @@ function bcsenergy(week::Int, lactating::Bool)
 end
 # ==============================================================================
 
+"""
+    WeatherEvent
+
+A type for holding a pair of evapotranspiration and rainfall
+"""
+immutable WeatherEvent
+    e::Float64 # evapotranspiration
+    r::Float64 # rainfall
+end
+
+"""
+    loadweatherdata(weathercsvpath::String, firstweek::Int)
+
+Convert the weather data from the file `weathercsvpath` in to a vector
+(one element for each stage 1, 2, ..., 52) of `Vector{WeatherEvent}` where each
+element represents an atom in the finite distribution of `WeatherEvent`s that
+can be sampled stagewise independently in the stage.
+
+`weathercsvpath` has the format
+    "year","week","rainfall","evapotranspiration"
+    1997,1,26.46,40.1
+    1998,1,0.0,22.5
+"""
+function loadweatherdata(weathercsvpath::String, firstweek::Int)
+    NIWA = readdlm(weathercsvpath, ',')
+    Ω = [WeatherEvent[] for t in 1:52]
+    for row in 2:size(NIWA, 1)
+        wk = mod(round(Int, NIWA[row, 2]) - firstweek, 52)+1
+        push!(Ω[wk], WeatherEvent(NIWA[row, 4], NIWA[row, 3]))
+    end
+    Ω
+end
+
+
+# initialize
+transition = Array{Float64, 2}[]
+prices = Vector{Float64}[]
+
+for t in 1:24
+    push!(transition, eye(1)')
+    push!(prices, [6.0])
+end
+# wk 25: $6 to $5, $6, $7
+push!(transition, [1/3 1/3 1/3])
+push!(prices, [5.0, 6.0, 7.0])
+for t in 26:51
+    push!(transition, eye(3))
+    push!(prices, [5.0, 6.0, 7.0])
+end
+# [$5, $6, $7]  to [$4, $5, $6, $7, $8]
+push!(transition, [
+    1/3 1/3 1/3 0   0  ;
+    0   1/3 1/3 1/3 0  ;
+    0   0   1/3 1/3 1/3;
+])
+push!(prices, [4.0, 5.0, 6.0, 7.0, 8.0])
+
+"""
+    generate repeatable noise scenarios
+"""
+function weatherscenarios(seed, n)
+    srand(seed)
+    y = Vector{Int}[]
+    for i in 1:n
+        push!(y, [rand(1:20) for t in 1:52])
+    end
+    # open("weatherscenarios.json", "w") do io
+    #     print(io, JSON.json(y))
+    # end
+    y
+end
+weatherscenarios(1234, 1000)
+
+function pricescenarios(seed, n, transition)
+    srand(seed)
+    y = Vector{Int}[]
+    for i in 1:n
+        markovnoise = rand(length(prices))
+        markov = [1]
+        for t in 2:length(prices)
+            for j in 1:size(transition[t], 2)
+                markovnoise[t] -= transition[t][markov[t-1], j]
+                if markovnoise[t] <= 0
+                    push!(markov, j)
+                    break
+                end
+            end
+        end
+
+        push!(y, copy(markov))
+    end
+    # open("pricescenarios.json", "w") do io
+    #     print(io, JSON.json(y))
+    # end
+    y
+end
+pricescenarios(1234, 1000, transition)
+
+# ==============================================================================
+
+weather = loadweatherdata("TGA.daily.df.csv", 31)
 model = Dict{String, Any}(
     "model_name"              => "Powder",
 
     "random_seed" => 1234, # for repeatability
-
+    "transition" => transition,
+    "prices"     => prices,
+    "weatherscenarios" => weatherscenarios(1234,1000),
+    "pricescenarios" => pricescenarios(1234,1000, transition),
     # Weather data
-    "niwa_data" => "TGA.daily.df.csv",
+    "niwa_data" => [[Dict("week"=>t,"year"=>i,"rainfall"=>weather[t][i].r, "evapotranspiration"=>weather[t][i].e) for i in 1:20] for t in 1:52],
 
     # SDDP Options
     "objective_bound"         => 1e6,
@@ -256,34 +361,6 @@ model = Dict{String, Any}(
     ]
 )
 
-# Used to calculate the energy correction factor in order to calibrate the model to
-# the data from the case-farm
-milking_requirements = model["energy_for_pregnancy"] + model["energy_for_bcs_milking"] + model["energy_for_maintenance"]
-dry_requirements = model["energy_for_pregnancy"] + model["energy_for_bcs_dry"] + model["energy_for_maintenance"]
-function energy_correction_factor(dim, milk_produced, feed_consumed)
-    wks = floor(Int, dim/7)
-    wk_frac = dim/7 - wks
-    total = sum(milking_requirements[1:wks]) + wk_frac * milking_requirements[wks+1] + (1-wk_frac) * dry_requirements[wks+1] + sum(dry_requirements[wks+2:end])
-    # kgDM/Ha required in the season excl. milking
-    feed_required = 3 * total / 11.0
-
-    avg_energy_content_of_milk = mean(model["energy_content_of_milk"][1:wks])
-    # kgDM/Ha required in the season for milking
-    feed_required_for_milk = milk_produced * avg_energy_content_of_milk / 11
-
-    feed_consumed / (feed_required_for_milk + feed_required)
-end
-
-# For the 2014/15 season
-s201415 = energy_correction_factor(256, 1146, 1000*(11.7+2.9))
-
-# For the 2013/14 season
-s201314 = energy_correction_factor(275, 1240, 1000*(12.6+2.8))
-
-println("Energy Correction Factor in 2014/15: ", s201415)
-println("Energy Correction Factor in 2013/14: ", s201314)
-model["energy_correction_factor"] = (s201415 + s201314) / 2
-
 open("model.parameters.json", "w") do io
-    write(io, JSON.json(model, 1))
+    write(io, JSON.json(model))
 end

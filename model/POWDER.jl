@@ -17,39 +17,6 @@
 using SDDP, JuMP, Gurobi, CPLEX, JSON
 
 """
-    WeatherEvent
-
-A type for holding a pair of evapotranspiration and rainfall
-"""
-immutable WeatherEvent
-    e::Float64 # evapotranspiration
-    r::Float64 # rainfall
-end
-
-"""
-    loadweatherdata(weathercsvpath::String, firstweek::Int)
-
-Convert the weather data from the file `weathercsvpath` in to a vector
-(one element for each stage 1, 2, ..., 52) of `Vector{WeatherEvent}` where each
-element represents an atom in the finite distribution of `WeatherEvent`s that
-can be sampled stagewise independently in the stage.
-
-`weathercsvpath` has the format
-    "year","week","rainfall","evapotranspiration"
-    1997,1,26.46,40.1
-    1998,1,0.0,22.5
-"""
-function loadweatherdata(weathercsvpath::String, firstweek::Int)
-    NIWA = readdlm(weathercsvpath, ',')
-    Ω = [WeatherEvent[] for t in 1:52]
-    for row in 2:size(NIWA, 1)
-        wk = mod(round(Int, NIWA[row, 2]) - firstweek, 52)+1
-        push!(Ω[wk], WeatherEvent(NIWA[row, 4], NIWA[row, 3]))
-    end
-    Ω
-end
-
-"""
     buildPOWDER(parameters::Dict)
 
 Construct the `SDDPModel` for POWDER given a dictionary of parameters.
@@ -59,44 +26,24 @@ vectors of the price process so that `prices[t][i]` is the price in stage `t` an
 Markov state `i`.
 """
 function buildPOWDER(parameters::Dict)
-    # initialize
+    # JSON back to Julia structure
     transition = Array{Float64, 2}[]
-    prices = Vector{Float64}[]
-    # branch at week 25 so weeks 1-24 are identical @ $6
-    for t in 1:24
-        push!(transition, eye(1)')
-        push!(prices, [6.0])
+    for tmat in parameters["transition"]
+        push!(transition, convert(Array{Float64, 2}, reshape(vcat(tmat...), length(tmat[1]), length(tmat))))
     end
-    # wk 25: $6 to $5, $6, $7
-    push!(transition, [1/3 1/3 1/3])
-    push!(prices, [5.0, 6.0, 7.0])
-    for t in 26:51
-        push!(transition, eye(3))
-        push!(prices, [5.0, 6.0, 7.0])
-    end
-    # [$5, $6, $7]  to [$4, $5, $6, $7, $8]
-    push!(transition, [
-        1/3 1/3 1/3 0   0  ;
-        0   1/3 1/3 1/3 0  ;
-        0   0   1/3 1/3 1/3;
-    ])
-    push!(prices, [4.0, 5.0, 6.0, 7.0, 8.0])
-
     m = SDDPModel(
-            sense = :Max,
-            stages = parameters["number_of_weeks"],
-            # Change this to choose a different solver
-            solver = GurobiSolver(OutputFlag=0),
-            # solver = CplexSolver(CPX_PARAM_SCRIND=0),
-            cut_oracle = LevelOneCutOracle(),
-            objective_bound = parameters["objective_bound"],
+                        sense = :Max,
+                       stages = parameters["number_of_weeks"],
+                       # Change this to choose a different solver
+                       solver = GurobiSolver(OutputFlag=0),
+                     # solver = CplexSolver(CPX_PARAM_SCRIND=0, CPX_PARAM_LPMETHOD=2),
+                   cut_oracle = LevelOneCutOracle(),
+              objective_bound = parameters["objective_bound"],
             markov_transition = transition
                 ) do sp, stage, price
 
         # load the stagewise independent noises
-        weatherpath = joinpath(dirname(@__DIR__), "data", parameters["niwa_data"])
-        Ω = loadweatherdata(weatherpath, parameters["first_week"])
-
+        Ω = parameters["niwa_data"]
         Pₘ = parameters["maximum_pasture_cover"]  # maximum pasture-cover
         Pₙ = parameters["number_of_pasture_cuts"] # number of pasture growth curve cuts
         gₘ = parameters["maximum_growth_rate"]    # pasture growth curve coefficient
@@ -105,7 +52,7 @@ function buildPOWDER(parameters::Dict)
         ηₛ = parameters["supplement_energy_density"] # net energy content of supplement (MJ/kgDM)
 
         # index of soil fertility estimated from average seasonal pasture growth
-        κ = parameters["soil_fertility"]
+        κ = parameters["soil_fertility"] # actual growth was too low
 
         # pasture growth as a function of pasture cover
         g(p, gmax=gₘ, pmax=Pₘ) = 4 * gmax / pmax * p * (1 - p / pmax)
@@ -125,10 +72,10 @@ function buildPOWDER(parameters::Dict)
 
         # Create variables
         @variables(sp, begin
-            b   >= 0 # quantity of supplement to buy (kgDM)
+            b   >= 0 # quantity of supplement to feed (kgDM)
             h   >= 0 # quantity of supplement to harvest (kgDM/Ha)
             i   >= 0 # irrigate farm (mm/Ha)
-            fₛ  >= 0 # feed herd supplement (kgDM)
+            fₛ  >= 0 # feed herd stored pasture (kgDM)
             fₚ  >= 0 # feed herd pasture (kgDM)
             ev  >= 0 # evapotranspiration rate
             gr  >= 0 # potential growth
@@ -159,17 +106,15 @@ function buildPOWDER(parameters::Dict)
         @constraints(sp, begin
             # State transitions
             P <= P₀ + 7*gr - h - fₚ
-            Q <= Q₀ + β*h + b - fₛ
-            # For a discussion about the 1e-6 term see
-            # see https://github.com/odow/SDDP.jl/issues/6#issuecomment-343022931
-            C <= C₀ #+ 1e-6 # implicitly C == C₀ - u | u ≥ 0
+            Q <= Q₀ + β*h - fₛ
+            C <= C₀ # implicitly C == C₀ - u | u ≥ 0
             W <= parameters["maximum_soil_moisture"]
 
-            milk <= mlk / (parameters["energy_correction_factor"] * parameters["energy_content_of_milk"][stage])
+            milk <= mlk / parameters["energy_content_of_milk"][stage]
 
             M <= M₀ + milk
             # energy balance
-            ηₚ * fₚ + ηₛ * fₛ >= parameters["energy_correction_factor"] * energy_req + mlk
+            ηₚ * (fₚ + fₛ) + ηₛ * b >= energy_req + mlk
 
             # maximum milk
             mlk <= parameters["max_milk_energy"][stage] * C₀
@@ -177,6 +122,8 @@ function buildPOWDER(parameters::Dict)
 
             # pasture growth constraints
             gr <= κ[stage] * ev / 7
+            # +1e-2 is used to avoid gr being slightly negative (although should
+            # be fixed in SDDP.jl - see #72
             [pbar=linspace(0,Pₘ, Pₙ)], gr <= g(pbar) + dgdt(pbar) * ( P₀ - pbar + 1e-2)
 
             # max irrigation
@@ -185,7 +132,7 @@ function buildPOWDER(parameters::Dict)
 
         @rhsnoises(sp, ω = Ω[stage], begin
             # evapotranspiration limited by potential evapotranspiration
-            ev <= ω.e
+            ev <= ω["evapotranspiration"]
             #=
                 soil mosture balance
 
@@ -201,7 +148,7 @@ function buildPOWDER(parameters::Dict)
             # ev <= (W / (0.5 * parameters["maximum_soil_moisture"]) - 1) * ω.e
 
             # less than accounts for drainage
-            W <= W₀ - ev + ω.r + i
+            W <= W₀ - ev + ω["rainfall"] + i
         end)
 
         if stage >= parameters["maximum_lactation"]
@@ -210,14 +157,16 @@ function buildPOWDER(parameters::Dict)
         end
 
         # a maximum rate of supplementation - for example due to FEI limits
+        cow_per_day = parameters["stocking_rate"] * 7
         @constraints(sp, begin
             Δ[1] >= 0
-            Δ[1] >= 0 + 1 * (fₛ - 3 * (parameters["stocking_rate"] * 7))
-            Δ[1] >= 2 + 2 * (fₛ - 4 * (parameters["stocking_rate"] * 7))
+            Δ[1] >= cow_per_day * (0.00 + 0.25 * (b / cow_per_day - 3))
+            Δ[1] >= cow_per_day * (0.25 + 0.50 * (b / cow_per_day - 4))
+            Δ[1] >= cow_per_day * (0.75 + 1.00 * (b / cow_per_day - 5))
         end)
 
         if stage == 52
-            @constraint(sp, cx <= M * prices[stage][price] -
+            @constraint(sp, cx <= M * parameters["prices"][stage][price] -
                 # cost of supplement ($/kgDM). Incl %DM from wet, storage loss, wastage
                 parameters["supplement_price"] * b -
                 parameters["cost_irrigation"] * i -   # cost of irrigation ($/mm)
@@ -238,24 +187,62 @@ function buildPOWDER(parameters::Dict)
 
         @stageobjective(sp,
             cx -
-            parameters["supplement_price"] * Δ[1] - # penalty from excess feeding due to FEI limits
-            1e3 * Δ[2] + # penalise low pasture cover
+            Δ[1] - # penalty from excess feeding due to FEI limits
+            1e2 * Δ[2] + # penalise low pasture cover
             0.0001*W # encourage soil moisture to max
         )
 
     end
-    return m, prices
+    return m
 end
 
 """
-    simulatemodel(fileprefix::String, m::SDDPModel, NSIM::Int, prices, Ω)
+    simulatemodel(fileprefix::String, m::SDDPModel, NSIM::Int, prices, Ω)""
 
 This function simulates the SDDPModel `m` `NSIM` times and saves:
  - the HTML visualization of the simulation at `fileprefix.html`
  - the results dictionary as a Julia serialized file at `fileprefix.results`
 """
-function simulatemodel(fileprefix::String, m::SDDPModel, NSIM::Int, prices, Ω)
-    results = simulate(m, NSIM, [:P, :Q, :C, :C₀, :W, :M, :fₛ, :fₚ, :gr, :mlk, :ev, :b, :i, :h, :cx, :milk])
+function simulatemodel(fileprefix::String, m::SDDPModel, parameters)
+    NSIM = parameters["number_simulations"]
+    # simulate high and low
+    srand(parameters["random_seed"])
+    noises = parameters["weatherscenarios"]
+
+    results = Dict{Symbol, Any}[]
+    for i in 1:NSIM
+        markov = [1]
+        for p in parameters["prices"][2:end]
+            push!(markov, length(p))
+        end
+        push!(results, simulate(m, [:P, :Q, :C, :C₀, :W, :M, :fₛ, :fₚ, :gr, :mlk, :ev, :b, :i, :h, :cx, :milk], markovstates=markov, noises=Int.(noises[i])))
+    end
+    SDDP.save!("$(fileprefix).high.results", results)
+
+    # simulate high and low
+    srand(parameters["random_seed"])
+    results = Dict{Symbol, Any}[]
+    for i in 1:NSIM
+        markov = [1]
+        for t in 2:length(parameters["prices"])
+            push!(markov, 1)
+        end
+        push!(results, simulate(m, [:P, :Q, :C, :C₀, :W, :M, :fₛ, :fₚ, :gr, :mlk, :ev, :b, :i, :h, :cx, :milk], markovstates=markov, noises=Int.(noises[i])))
+    end
+    SDDP.save!("$(fileprefix).low.results", results)
+
+    srand(parameters["random_seed"])
+    pricescenarios = parameters["pricescenarios"]
+    # results = simulate(m, NSIM, [:P, :Q, :C, :C₀, :W, :M, :fₛ, :fₚ, :gr, :mlk, :ev, :b, :i, :h, :cx, :milk])
+    results = Dict{Symbol, Any}[]
+    for i in 1:NSIM
+        for t in 2:length(parameters["prices"])
+            if length(parameters["prices"][t]) == 1
+                pricescenarios[i][t] = 1
+            end
+        end
+        push!(results, simulate(m, [:P, :Q, :C, :C₀, :W, :M, :fₛ, :fₚ, :gr, :mlk, :ev, :b, :i, :h, :cx, :milk], markovstates=Int.(pricescenarios[i]), noises=Int.(noises[i])))
+    end
     p = SDDP.newplot()
     SDDP.addplot!(p, 1:NSIM, 1:52, (i,t)->results[i][:stageobjective][t], title="Objective", cumulative=true)
     SDDP.addplot!(p, 1:NSIM, 1:52, (i,t)->results[i][:cx][t], title="Objective", cumulative=true)
@@ -267,13 +254,13 @@ function simulatemodel(fileprefix::String, m::SDDPModel, NSIM::Int, prices, Ω)
     SDDP.addplot!(p, 1:NSIM, 1:52, (i,t)->results[i][:milk][t] / 7 / 3, title="Milk Production / Cow")
     SDDP.addplot!(p, 1:NSIM, 1:52, (i,t)->results[i][:gr][t], title="Growth")
     SDDP.addplot!(p, 1:NSIM, 1:52, (i,t)->results[i][:ev][t], title="Actual Evapotranspiration")
-    SDDP.addplot!(p, 1:NSIM, 1:52, (i,t)->Ω[t][results[i][:noise][t]].e, title="Potential Evapotranspiration")
-    SDDP.addplot!(p, 1:NSIM, 1:52, (i,t)->Ω[t][results[i][:noise][t]].r, title="Rainfall")
-    SDDP.addplot!(p, 1:NSIM, 1:52, (i,t)->prices[t][results[i][:markov][t]], title="Price")
+    SDDP.addplot!(p, 1:NSIM, 1:52, (i,t)->parameters["niwa_data"][t][results[i][:noise][t]]["evapotranspiration"], title="Potential Evapotranspiration")
+    SDDP.addplot!(p, 1:NSIM, 1:52, (i,t)->parameters["niwa_data"][t][results[i][:noise][t]]["rainfall"], title="Rainfall")
+    SDDP.addplot!(p, 1:NSIM, 1:52, (i,t)->parameters["prices"][t][results[i][:markov][t]], title="Price")
     SDDP.addplot!(p, 1:NSIM, 1:52, (i,t)->results[i][:mlk][t], title="Milk")
     SDDP.addplot!(p, 1:NSIM, 1:52, (i,t)->results[i][:fₚ][t], title="Feed Pasture")
-    SDDP.addplot!(p, 1:NSIM, 1:52, (i,t)->results[i][:fₛ][t], title="Feed Supplement")
-    SDDP.addplot!(p, 1:NSIM, 1:52, (i,t)->results[i][:b][t], title="Purchases")
+    SDDP.addplot!(p, 1:NSIM, 1:52, (i,t)->results[i][:fₛ][t], title="Feed Silage")
+    SDDP.addplot!(p, 1:NSIM, 1:52, (i,t)->results[i][:b][t], title="Feed PKE")
     SDDP.addplot!(p, 1:NSIM, 1:52, (i,t)->results[i][:i][t], title="Irrigation")
     SDDP.addplot!(p, 1:NSIM, 1:52, (i,t)->results[i][:h][t], title="Harvest")
     SDDP.show("$(fileprefix).html", p)
@@ -287,15 +274,11 @@ end
 Run POWDER model and produce some nice pictures and statistics
 """
 function runPOWDER(parameterfile::String)
-    # parse the parameters
-    parameters = JSON.parsefile(parameterfile)
+
+    parameters = JSON.parsefile(parameterfile) # parse the parameters
     srand(parameters["random_seed"])
-    # build the sddp model
-    (m, prices) = buildPOWDER(parameters)
-    # name to save files
-    name = parameters["model_name"]
-    # get the weather data
-    Ω = loadweatherdata(joinpath(dirname(@__DIR__), "data", parameters["niwa_data"]), parameters["first_week"])
+    m = buildPOWDER(parameters)                # build the sddp model
+    name = parameters["model_name"]            # name to save files
 
     # solve the model
     solve(m,
@@ -310,7 +293,7 @@ function runPOWDER(parameterfile::String)
     SDDP.savemodel!("$(name).model", m)
 
     # simulate it
-    results = simulatemodel(name, m, parameters["number_simulations"], prices, Ω)
+    results = simulatemodel(name, m, parameters)
 
     # build summary results table
     headers = [
@@ -327,7 +310,7 @@ function runPOWDER(parameterfile::String)
         "Fixed Expense (\\\$/Ha)",
         "Operating Profit (\\\$/Ha)",
         "per Hectare",
-        "per Cow"
+        "FEI Penalty"
     ]
 
     benchmark = [
@@ -344,7 +327,7 @@ function runPOWDER(parameterfile::String)
         3536,
         "",
         2197,
-        732
+        "-"
     ]
 
     simquant(x) = quantile(x, [0.0, 0.25, 0.5, 0.75, 1.0])
@@ -353,20 +336,20 @@ function runPOWDER(parameterfile::String)
     data[2,:] = ""
     data[3,:] = simquant([sim[:M][end] for sim in results])
     data[4,:] = data[3,:] / parameters["stocking_rate"]
-    data[5,:] = simquant([sim[:M][end] * prices[end][sim[:markov][end]] for sim in results])
+    data[5,:] = simquant([sim[:M][end] * parameters["prices"][end][sim[:markov][end]] for sim in results])
     data[6,:] = ""
-    data[7,:] = simquant([sum(sim[:fₚ]) for sim in results]) / 1000
-    data[8,:] = simquant([sum(sim[:fₛ]) for sim in results]) / 1000
-    data[9,:] = 100*simquant([sum(sim[:fₛ]) ./ (sum(sim[:fₛ]) + sum(sim[:fₚ])) for sim in results])
+    data[7,:] = simquant([sum(sim[:fₚ]) + sum(sim[:fₛ]) for sim in results]) / 1000
+    data[8,:] = simquant([sum(sim[:b]) for sim in results]) / 1000
+    data[9,:] = 100*simquant([sum(sim[:b]) ./ (sum(sim[:b]) + sum(sim[:fₛ]) + sum(sim[:fₚ])) for sim in results])
     data[10,:] = data[8,:] * 1000 * parameters["supplement_price"]
     data[11,:] = parameters["fixed_cost"]
     data[12,:] = ""
     data[13,:] = simquant([sum(sim[:cx]) for sim in results]) - parameters["fixed_cost"]
-    data[14,:] = data[13,:] / parameters["stocking_rate"]
+    data[14,:] = simquant([sum(sim[:cx]) - sim[:objective] for sim in results])
 
     # print a formatted table for copying into latex
     roundings = [1, 0, 0, 0, 0, 0, 2, 2, 1, 0, 0, 0, 0, 0]
-    hlines = [true, false, false, false, true, false, false, false, false, true, true, false, false, false]
+    hlines = [true, false, false, false, true, false, false, false, false, true, true, false, true, false]
     open("$(name).data.tex", "w") do io
         for i in 1:size(data, 1)
             print(io, headers[i])
