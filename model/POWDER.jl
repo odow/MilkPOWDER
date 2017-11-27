@@ -118,7 +118,8 @@ function buildPOWDER(parameters::Dict)
 
             # maximum milk
             mlk <= parameters["max_milk_energy"][stage] * C₀
-            mlk >= parameters["min_milk_energy"][stage] * C₀
+            # minimum milk
+            milk >= parameters["min_milk_production"] * C₀
 
             # pasture growth constraints
             gr <= κ[stage] * ev / 7

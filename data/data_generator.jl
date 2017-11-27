@@ -350,9 +350,7 @@ model = Dict{String, Any}(
     "max_milk_energy"  => [         # MJ/cow/week
         milkenergy(t) for t in 1:52
     ],
-    "min_milk_energy"  => [         # MJ/cow/week
-        0.5 * milkenergy(t) for t in 1:52
-    ],
+    "min_milk_production"  => 7 * 0.9, # kg/cow/week
     "energy_for_bcs_milking"  => [         # MJ/cow/week
         bcsenergy(t, true) for t in 1:52
     ],
