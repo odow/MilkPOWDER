@@ -20,10 +20,6 @@ using SDDP, JuMP, Gurobi, CPLEX, JSON
     buildPOWDER(parameters::Dict)
 
 Construct the `SDDPModel` for POWDER given a dictionary of parameters.
-
-Returns `(m, prices)` where `m` is the `SDDPModel` and prices is a vector of
-vectors of the price process so that `prices[t][i]` is the price in stage `t` and
-Markov state `i`.
 """
 function buildPOWDER(parameters::Dict)
     # JSON back to Julia structure
