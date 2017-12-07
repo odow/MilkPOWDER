@@ -299,19 +299,18 @@ function runPOWDER(parameterfile::String)
     # build summary results table
     headers = [
         "Lactation Length (Weeks) ",
-        "Milk Production (kgMS)",
+        "Milk Production (kg)",
         "per Hectare",
         "per Cow",
         "Milk Revenue (\\\$/Ha)",
         "Feed Consumed (t/Ha)",
-        "grown on-farm",
-        "grown off-farm",
+        "Pasture",
+        "Palm Kernel",
         "\\% Feed Imported",
-        "Supplement Expense (\\\$/Ha)",
+        "Palm Kernel Expense (\\\$/Ha)",
         "Fixed Expense (\\\$/Ha)",
         "Operating Profit (\\\$/Ha)",
-        "per Hectare",
-        "FEI Penalty"
+        "Fat Evaluation Index Penalty"
     ]
 
     benchmark = [
@@ -326,13 +325,12 @@ function runPOWDER(parameterfile::String)
         19,
         1425,
         3536,
-        "",
         2197,
         "-"
     ]
 
     simquant(x) = quantile(x, [0.0, 0.25, 0.5, 0.75, 1.0])
-    data = Array{Any}(14, 5)
+    data = Array{Any}(13, 5)
     data[1,:] = simquant([sum(sim[:C₀]) / parameters["stocking_rate"] for sim in results])
     data[2,:] = ""
     data[3,:] = simquant([sim[:M][end] for sim in results])
@@ -344,13 +342,12 @@ function runPOWDER(parameterfile::String)
     data[9,:] = 100*simquant([sum(sim[:b]) ./ (sum(sim[:b]) + sum(sim[:fₛ]) + sum(sim[:fₚ])) for sim in results])
     data[10,:] = data[8,:] * 1000 * parameters["supplement_price"]
     data[11,:] = parameters["fixed_cost"]
-    data[12,:] = ""
-    data[13,:] = simquant([sum(sim[:cx]) for sim in results]) - parameters["fixed_cost"]
-    data[14,:] = simquant([sum(sim[:cx]) - sim[:objective] for sim in results])
+    data[12,:] = simquant([sum(sim[:cx]) for sim in results]) - parameters["fixed_cost"]
+    data[13:] = simquant([sum(sim[:cx]) - sim[:objective] for sim in results])
 
     # print a formatted table for copying into latex
     roundings = [1, 0, 0, 0, 0, 0, 2, 2, 1, 0, 0, 0, 0, 0]
-    hlines = [true, false, false, false, true, false, false, false, false, true, true, false, true, false]
+    hlines = [true, false, false, false, true, false, false, false, false, true, true, true, false]
     open("$(name).data.tex", "w") do io
         for i in 1:size(data, 1)
             print(io, headers[i])
