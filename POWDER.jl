@@ -339,7 +339,7 @@ function runPOWDER(parameterfile::String)
     data[10,:] = data[8,:] * 1000 * parameters["supplement_price"]
     data[11,:] = parameters["fixed_cost"]
     data[12,:] = simquant([sum(sim[:cx]) for sim in results]) - parameters["fixed_cost"]
-    data[13:] = simquant([sum(sim[:cx]) - sim[:objective] for sim in results])
+    data[13,:] = simquant([sum(sim[:cx]) - sim[:objective] for sim in results])
 
     # print a formatted table for copying into latex
     roundings = [1, 0, 0, 0, 0, 0, 2, 2, 1, 0, 0, 0, 0, 0]
