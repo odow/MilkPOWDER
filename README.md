@@ -1,3 +1,5 @@
+**Update: April 2023: This repository is archived. Please open an issue at [https://github.com/odow/SDDP.jl](https://github.com/odow/SDDP.jl) to discuss the POWDER model.**
+
 ## Milk POWDER: the milk Production Optimizer incorporating Weather Dynamics and Econmic risk
 
 This repository implements the model described in Dowson et al. (2017). *A
